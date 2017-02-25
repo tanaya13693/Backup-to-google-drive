@@ -1,0 +1,3 @@
+#!/bin/bash
+./extra_credit/install
+./scripts/duplyGuiWrapper

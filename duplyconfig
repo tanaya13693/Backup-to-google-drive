@@ -1,0 +1,131 @@
+#!/bin/bash
+
+###############################################################################
+############################# v a r i a b l e s ###############################
+###############################################################################
+duplypath="~/.duply"
+profile=local
+googleconf=gdrive
+localsource=/
+gdrivetarget=backup/
+gmail=ucrcs183projectbackup@gmail.com
+clientid=901806097750-up53nknlnhda4jsjnmlbasvhpts0tnam.apps.googleusercontent.com
+clientsecret=bPdQ8642k2i0us8_UnPbyDkE
+authtarget=authkey
+logpath=configlog
+userhome=${HOME}
+###############################################################################
+############################# f u n c t i o n s ###############################
+###############################################################################
+function showusage {
+	echo "# duplyconfig"
+	echo "    Use Default Vales"
+	echo "# duplyconfig ?"
+	echo "    Shows Usage"
+	echo "# duplyconfig <-Flag> <value>"
+	echo "    <-Flag>"
+	echo "    -profile"
+	echo "    -source"
+	echo "    -target"
+	echo "    -authkey"
+        echo "    -logpath"
+        echo "    -email"
+}
+
+function checkarg {
+	# run with default value
+	if [ $# -eq 0 ]
+	then
+		echo "default"
+		return 0
+	fi
+	# show usage and exit with 1
+	if [ ${@:1:1} = "?" ]
+	then
+		showusage
+		exit 1
+	fi
+	# replace value with respect to flag
+	for (( i=1; i <= $#; i++ ))
+	do
+		if [ ${@:$i:1} = "-profile" ]
+		then
+			i=$i+1
+			profile="${@:$i:1}"
+		fi
+		if [ ${@:$i:1} = "-logpath" ]
+		then
+			i=$i+1
+			logpath="${@:$i:1}"
+		fi
+		if [ ${@:$i:1} = "-source" ]
+		then
+			i=$i+1
+			localsource="${@:$i:1}"
+		fi
+		if [ ${@:$i:1} = "-target" ]
+		then
+			i=$i+1
+			gdrivetarget="${@:$i:1}"
+		fi
+		if [ ${@:$i:1} = "-authkey" ]
+		then
+			i=$i+1
+			key="${@:$i:1}"
+			`echo $key > "$authtarget"`
+		fi
+		if [ ${@:$i:1} = "-email" ]
+		then
+			i=$i+1
+			gmail="${@:$i:1}"
+		fi
+
+	done
+}
+
+
+###############################################################################
+####################### M A G I C   S E C T I O N #############################
+###############################################################################
+# check arg
+checkarg $@
+
+# create conf file
+if [ -d ${userhome}/.duply/${profile} ] ; then
+   echo "duply profile ${profile} exists, continuing... "
+else
+   echo "creating duply profile"
+   duply ${profile} create &>> $logpath
+fi
+
+echo "setting duply $profile configurations..."
+
+mkdir -p ${userhome}/.duply/${profile}
+echo "export GOOGLE_DRIVE_SETTINGS=${userhome}/.duply/${profile}/${googleconf}" > ${userhome}/.duply/${profile}/conf
+echo "GPG_KEY='disabled'" >> ${userhome}/.duply/${profile}/conf
+echo "TARGET='gdocs://${gmail}/${gdrivetarget}'" >> ${userhome}/.duply/${profile}/conf
+echo "# base directory to backup" >> ${userhome}/.duply/${profile}/conf
+echo "SOURCE='${localsource}'" >> ${userhome}/.duply/${profile}/conf
+
+# create googleconf file
+echo "setting google drive configuration...."
+
+echo "client_config_backend: settings" > ${userhome}/.duply/${profile}/${googleconf}
+echo "client_config:" >> ${userhome}/.duply/${profile}/${googleconf}
+echo "   client_id: ${clientid}" >> ${userhome}/.duply/${profile}/${googleconf}
+echo "   client_secret: ${clientsecret}" >> ${userhome}/.duply/${profile}/${googleconf}
+echo "save_credentials: True" >> ${userhome}/.duply/${profile}/${googleconf}
+echo "save_credentials_backend: file" >> ${userhome}/.duply/${profile}/${googleconf}
+echo "save_credentials_file: ${userhome}/.duply/${profile}/${googleconf}.cache" >> ${userhome}/.duply/${profile}/${googleconf}
+echo "get_refresh_token: True" >> ${userhome}/.duply/${profile}/${googleconf}
+
+#install google drive auth key
+if [ -f ${userhome}/.duply/${profile}/${googleconf}.cache ] ; then
+   echo "google drive already authenticated, continuing..."
+elif [ -s $authtarget ] ; then
+   echo "importing google drive authorization key from $authtarget"
+   duply $profile status < ${authtarget} #&>> $logpath
+else
+   echo "authorization key file $authtarget not found, duplicity not authorized"
+fi
+exit 0

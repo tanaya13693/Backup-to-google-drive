@@ -1,0 +1,234 @@
+#!/usr/bin/env python
+
+import struct
+import sys
+import threading
+import Queue
+import time
+import subprocess
+import os
+import Tkinter
+import tkMessageBox
+import webbrowser
+ 
+class BackupWindow(Tkinter.Frame):
+  def __init__(self, queue):
+    self.queue = queue
+
+    Tkinter.Frame.__init__(self)
+    self.pack()
+    
+    #GUI Elements
+    self.listText = Tkinter.StringVar()
+    self.listText.set("Profiles")
+    self.listLabel = Tkinter.Label(self, textvariable=self.listText)
+    self.listLabel.grid(row=0, column=0, padx=5, pady=10)
+    self.text = Tkinter.Text(self)
+    self.text.grid(row=1, column=0, padx=5, pady=2, columnspan=1)
+    self.text.config(state=Tkinter.DISABLED, height=10, width=30)
+    
+    self.outText = Tkinter.StringVar()
+    self.outText.set("Output")
+    self.outLabel = Tkinter.Label(self, textvariable=self.outText)
+    self.outLabel.grid(row=0, column=1, padx=5, pady=10)
+    self.outText = Tkinter.Text(self)
+    self.outText.grid(row=1, column=1, padx=5, pady=2, columnspan=1)
+    self.outText.config(state=Tkinter.DISABLED, height=10, width=40)
+
+    self.profileText = Tkinter.StringVar()
+    self.profileText.set("Profile Name:")
+    self.profileLabel = Tkinter.Label(self, textvariable=self.profileText)
+    self.profileLabel.grid(row=2, column=0, padx=5, pady=5, sticky='E')
+    self.profileContent = Tkinter.StringVar()
+    self.profileEntry = Tkinter.Entry(self, textvariable=self.profileContent)
+    self.profileEntry.grid(row=2, column=1, padx=5, pady=5, sticky='W')
+    
+    self.directoryText = Tkinter.StringVar()
+    self.directoryText.set("Directory:")
+    self.directoryLabel = Tkinter.Label(self, textvariable=self.directoryText)
+    self.directoryLabel.grid(row=4, column=0, padx=5, sticky='E')
+    self.directoryContent = Tkinter.StringVar()
+    self.directoryEntry = Tkinter.Entry(self, textvariable=self.directoryContent)
+    self.directoryEntry.grid(row=4, column=1, padx=5, sticky='W')
+    
+    self.targetText = Tkinter.StringVar()
+    self.targetText.set("Restore Target (optional):")
+    self.targetLabel = Tkinter.Label(self, textvariable=self.targetText)
+    self.targetLabel.grid(row=5, column=0, padx=5, sticky='E')
+    self.targetContent = Tkinter.StringVar()
+    self.targetEntry = Tkinter.Entry(self, textvariable=self.targetContent)
+    self.targetEntry.grid(row=5, column=1, padx=5, sticky='W')
+    
+    self.optionsText = Tkinter.StringVar()
+    self.optionsText.set("Arguments (optional):")
+    self.optionsLabel = Tkinter.Label(self, textvariable=self.optionsText)
+    self.optionsLabel.grid(row=6, column=0, padx=5, sticky='E')
+    self.optionsContent = Tkinter.StringVar()
+    self.optionsEntry = Tkinter.Entry(self, textvariable=self.optionsContent)
+    self.optionsEntry.grid(row=6, column=1, padx=5, sticky='W')
+
+    self.emailText = Tkinter.StringVar()
+    self.emailText.set("Gmail:")
+    self.emailLabel = Tkinter.Label(self, textvariable=self.emailText)
+    self.emailLabel.grid(row=7, column=0, padx=5, pady=(0,5), sticky='E')
+    self.emailContent = Tkinter.StringVar()
+    self.emailEntry = Tkinter.Entry(self, textvariable=self.emailContent)
+    self.emailEntry.grid(row=7, column=1, padx=5, pady=(0,5), sticky='W')
+    
+    self.createButton = Tkinter.Button(self, text="Create", command=self.onCreate)
+    self.createButton.grid(row=3, column=0, padx=5, pady=10)
+    
+    self.backupButton = Tkinter.Button(self, text="Backup", command=self.onBackup)
+    self.backupButton.grid(row=3, column=1, padx=5, pady=10, sticky='W')
+    self.restoreButton = Tkinter.Button(self, text="Restore", command=self.onRestore)
+    self.restoreButton.grid(row=3, column=1, padx=5, pady=10, sticky='E')
+    
+    self.resetButton = Tkinter.Button(self, text="Reset", command=self.onReset)
+    self.resetButton.grid(row=0, column=1, padx=5, pady=10, sticky='E')
+    
+    self.getButton = Tkinter.Button(self, text="Get Key", command=self.onGetKey)
+    self.getButton.grid(row=8, column=0, padx=5, pady=10, sticky='W')
+    self.onReset()
+    
+  #Get Key Button Function: opens link to webpage  
+  def onGetKey(self):
+    webbrowser.open('https://accounts.google.com/o/oauth2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob&response_type=code&client_id=901806097750-up53nknlnhda4jsjnmlbasvhpts0tnam.apps.googleusercontent.com&access_type=offline')
+    
+  #Gets List of profiles by checking ./duply directory
+  def getProfiles(self):
+    command = ['ls', os.path.expanduser('~') + '/.duply']
+    try:
+      commandOut = subprocess.check_output(command)
+      self.log(commandOut,self.text)
+    except subprocess.CalledProcessError:
+      self.clearText(self.text)
+    
+  #Create and configue a Backup Profile
+  #By executing local script
+  def onCreate(self):
+    profile = self.profileContent.get()
+    directory = self.directoryContent.get()
+    authkey = self.optionsContent.get()
+    email = self.emailContent.get()
+    
+    #requires profile name, directory, and authkey
+    if(profile == '' or directory == '' or authkey == '' or email == ''):
+      message = "Error: Profile Name, Directory and Gmail must be specified. Also, must have the Google Drive Authentication Key (use Get Key)."
+      self.log(message, self.outText)
+      return
+      
+    command = ["./duplyconfig", "-profile", profile, "-source", directory, "-authkey", authkey]
+    message = "Attempting creation of profile: " + profile
+    self.log(message, self.outText)
+    
+    if(self.executeCommand(command) == True):
+      message = "Creation of " + profile + " successful."
+      self.log(message, self.outText)
+    else:
+      message = "Error: Creation of " + profile + " failure."
+      self.log(message, self.outText)
+      return
+
+    self.clearText(self.text)
+    self.getProfiles()
+    
+  #Backup Button function, preforms backup
+  def onBackup(self):
+    profile = self.profileContent.get();
+    command = ["duply", profile, "backup"]
+    if(profile == ''):
+      message = "Error: Profile must be specified."
+      self.log(message, self.outText)
+      return
+    message = "Attempting Backup of " + profile + "."
+    self.log(message, self.outText)
+    if(self.executeCommand(command) == True):
+      message = "Backup of " + profile + " successful."
+      self.log(message, self.outText)
+    else:
+      message = "Error: Backup of " + profile + " failure."
+      self.log(message, self.outText)
+  
+  #Restore Button function, preforms restore    
+  def onRestore(self):
+    profile = self.profileContent.get()
+    dest = self.directoryContent.get()
+    target = self.targetContent.get()
+    options = self.optionsContent.get()
+    
+    if(profile == '' or dest == ''):
+      message = "Error: Profile AND Destination must be specified."
+      self.log(message, self.outText)
+      return
+    
+    #assembling command
+    command = ["duply", profile]
+    message = "Restore of "
+    #if a target is specified, use fetch rather than restore
+    if(target != ''):
+      message += target + " within "
+      command.extend(["fetch", target, dest])
+    else:
+      command.extend(["restore", dest])
+    message += profile + " to " + dest
+    #if age is specified, add it
+    if(options != ''):
+      message += " with age: " + options
+      command.extend([options])
+      
+    message += "."
+    
+    self.log("Attempting " + message, self.outText)
+    if(self.executeCommand(command) == True):
+      message = message[0:-1] + " successful."
+      self.log(message, self.outText)
+    else:
+      message = "Error: " + message[0:-1] + " failure."
+      self.log(message, self.outText)
+  
+  #Execute a command as a subprocess
+  def executeCommand(self, command):
+    try:
+      FNULL = open(os.devnull, 'w')
+      subprocess.check_call(command, stdout = FNULL)
+    except subprocess.CalledProcessError:
+      FNULL.close()
+      return False
+    FNULL.close()
+    return True
+  
+  #clear text boxes
+  def clearText(self, box):
+    box.config(state=Tkinter.NORMAL)
+    box.delete('1.0', Tkinter.END)
+    box.config(state=Tkinter.DISABLED)
+    
+  #reset button function  
+  def onReset(self):
+     self.clearText(self.text)
+     self.clearText(self.outText)
+     self.profileEntry.delete(0, 'end')
+     self.directoryEntry.delete(0, 'end')
+     self.getProfiles()
+     
+  #write to a text box
+  def log(self, message, box):
+    box.config(state=Tkinter.NORMAL)
+    box.insert(Tkinter.END, message + "\n")
+    box.config(state=Tkinter.DISABLED)
+
+
+def Main():
+
+  queue = Queue.Queue()
+
+  main_window = BackupWindow(queue)
+  main_window.master.title('Google Drive Backup')
+
+  main_window.mainloop()
+
+  sys.exit(0)
+
+
+if __name__ == '__main__':
+  Main()
